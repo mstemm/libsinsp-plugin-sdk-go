@@ -21,7 +21,9 @@ const (
 )
 
 const MaxEvtSize uint32 = 65635
-const MaxNextBufSize uint32 = 4 * 1024 * 1024
+
+// The maximum number of events to return from a call to next_batch
+const MaxNextBatchEvents = 512
 
 const (
 	ParamTypeNone             uint32 = 0

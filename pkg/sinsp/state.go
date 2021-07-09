@@ -10,6 +10,22 @@ typedef struct {
    void* goMem;
    void* batchCtx;
 } state;
+
+typedef struct ss_plugin_event
+{
+   uint8_t *data;
+   uint32_t datalen;
+   uint64_t ts;
+} ss_plugin_event;
+
+
+void fill_event(ss_plugin_event *evts, int idx, uint8_t *data, uint32_t datalen, uint64_t ts)
+{
+   evts[idx].data = data;
+   evts[idx].datalen = datalen;
+   evts[idx].ts = ts;
+}
+
 */
 import "C"
 import (
@@ -111,6 +127,21 @@ func Context(p unsafe.Pointer) unsafe.Pointer {
 	return (*C.state)(p).goMem
 }
 
+// Convert the provided slice of PluginEvents into a C array of
+// ss_plugin_event structs, suitable for returning in
+// plugin_next/plugin_next_batch.
+func Events(evts []*PluginEvent) unsafe.Pointer {
+	ret := (*C.ss_plugin_event)(C.malloc((C.ulong)(len(evts))*C.sizeof_ss_plugin_event))
+	for i, evt := range evts {
+		C.fill_event(ret,
+			(C.int)(i),
+			(*C.uchar)(C.CBytes(evt.Data)),
+			(C.uint)(len(evt.Data)),
+			(C.ulong)(evt.Timestamp))
+	}
+
+	return (unsafe.Pointer)(ret)
+}
 // Free disposes of any C and Go memory assigned to p and finally free P,
 // assuming p is a state container created with NewStateContainer().
 func Free(p unsafe.Pointer) {
