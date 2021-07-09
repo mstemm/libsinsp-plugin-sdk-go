@@ -6,7 +6,7 @@ import (
 	"log"
 	"unsafe"
 
-	"github.com/ldegio/libsinsp-plugin-sdk-go/pkg/sinsp"
+	"github.com/mstemm/libsinsp-plugin-sdk-go/pkg/sinsp"
 )
 
 // Plugin consts
@@ -15,7 +15,7 @@ const (
 	PluginVersion     string = "0.0.1"
 	PluginName               = "async"
 	PluginDescription        = "async extractor example"
-	PluginContact            = "github.com/ldegio/libsinsp-plugin-sdk-go"
+	PluginContact            = "github.com/mstemm/libsinsp-plugin-sdk-go"
 	PluginEventSources       = `["some-event-source"]`
 )
 
@@ -32,6 +32,12 @@ var gLastError error
 // export plugin_get_required_api_version
 func plugin_get_required_api_version() *C.char {
 	return C.CString(PluginApiVersion)
+}
+
+//export plugin_get_type
+func plugin_get_type() uint32 {
+	log.Printf("[%s] plugin_get_type\n", PluginName)
+	return sinsp.TypeExtractorPlugin
 }
 
 //export plugin_init
@@ -59,12 +65,6 @@ func plugin_get_last_error() *C.char {
 		return C.CString(gLastError.Error())
 	}
 	return nil
-}
-
-//export plugin_get_type
-func plugin_get_type() uint32 {
-	log.Printf("[%s] plugin_get_type\n", PluginName)
-	return sinsp.TypeExtractorPlugin
 }
 
 //export plugin_get_name
