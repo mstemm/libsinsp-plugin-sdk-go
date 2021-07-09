@@ -1,3 +1,3 @@
-module github.com/ldegio/libsinsp-plugin-sdk-go
+module github.com/mstemm/libsinsp-plugin-sdk-go
 
 go 1.15
