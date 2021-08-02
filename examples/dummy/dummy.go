@@ -1,8 +1,10 @@
 package main
 
+// #cgo CFLAGS: -I${SRCDIR}/../../../libs/userspace/libscap
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <plugin_info.h>
 */
 import "C"
 import (
@@ -68,7 +70,7 @@ func plugin_destroy(pState unsafe.Pointer) {
 }
 
 //export plugin_get_last_error
-func plugin_get_last_error() *C.char {
+func plugin_get_last_error(pState unsafe.Pointer) *C.char {
 	log.Printf("[%s] plugin_get_last_error\n", PluginName)
 	if gLastError != nil {
 		return C.CString(gLastError.Error())
@@ -155,7 +157,7 @@ func plugin_close(pState unsafe.Pointer, oState unsafe.Pointer) {
 }
 
 //export plugin_next
-func plugin_next(pState unsafe.Pointer, oState unsafe.Pointer, retEvt *unsafe.Pointer) int32 {
+func plugin_next(pState unsafe.Pointer, oState unsafe.Pointer, retEvt **C.ss_plugin_event) int32 {
 	log.Printf("[%s] plugin_next\n", PluginName)
 
 	// time.Sleep(time.Second)
@@ -174,16 +176,21 @@ func plugin_next(pState unsafe.Pointer, oState unsafe.Pointer, retEvt *unsafe.Po
 		Timestamp:         uint64(time.Now().Unix()) * 1000000000,
 	}
 
-	*retEvt = sinsp.Events([]*sinsp.PluginEvent{evt})
+	*retEvt = (*C.ss_plugin_event)(sinsp.Events([]*sinsp.PluginEvent{evt}))
 
 	return sinsp.ScapSuccess
 }
 
 //export plugin_event_to_string
-func plugin_event_to_string(plgState unsafe.Pointer, data *C.char, datalen uint32) *C.char {
-	log.Printf("[%s] plugin_event_to_string %v\n", PluginName, C.GoStringN(data, C.int(datalen)))
+func plugin_event_to_string(plgState unsafe.Pointer, data *C.uint8_t, datalen uint32) *C.char {
+
+	// This can blindly convert the C.uint8_t to a *C.char, as the
+	// plugin always returns a C string as the event buffer.
+	evtStr := C.GoStringN((*C.char)(unsafe.Pointer(data)), C.int(datalen))
+
+	log.Printf("[%s] plugin_event_to_string %v\n", PluginName, evtStr)
 	// do something dummy with the string
-	s := fmt.Sprintf("evt-to-string(len=%d): %s", datalen, C.GoStringN(data, C.int(datalen)))
+	s := fmt.Sprintf("evt-to-string(len=%d): %s", datalen, evtStr)
 	return C.CString(s)
 }
 

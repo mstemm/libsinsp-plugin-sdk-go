@@ -62,6 +62,11 @@ func Context(p unsafe.Pointer) unsafe.Pointer {
 // Convert the provided slice of PluginEvents into a C array of
 // ss_plugin_event structs, suitable for returning in
 // plugin_next/plugin_next_batch.
+//
+// The return value is an unsafe.Pointer, as the C.ss_plugin_event
+// type is package-specific and can't be easily used outside the
+// package (See https://github.com/golang/go/issues/13467)
+
 func Events(evts []*PluginEvent) unsafe.Pointer {
 	ret := (*C.ss_plugin_event)(C.malloc((C.ulong)(len(evts))*C.sizeof_ss_plugin_event))
 	for i, evt := range evts {
