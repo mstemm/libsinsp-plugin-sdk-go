@@ -3,25 +3,8 @@ package sinsp
 /*
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdbool.h>
 
-typedef bool (*cb_wait_t)(void* wait_ctx);
-
-typedef struct async_extractor_info
-{
-	uint64_t evtnum;
-        uint32_t ftype;
-	const char *field;
-	const char* arg;
-	uint8_t *data;
-	uint32_t datalen;
-	uint32_t field_present;
-	char* res_str;
-	uint64_t res_u64;
-	int32_t rc;
-	cb_wait_t cb_wait;
-	void* wait_ctx;
-} async_extractor_info;
+#include <plugin_info.h>
 
 #include <unistd.h>
 

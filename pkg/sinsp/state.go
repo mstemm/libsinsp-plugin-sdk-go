@@ -3,18 +3,11 @@ package sinsp
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <plugin_info.h>
 
 typedef struct {
    void* goMem;
 } state;
-
-typedef struct ss_plugin_event
-{
-   uint8_t *data;
-   uint32_t datalen;
-   uint64_t ts;
-} ss_plugin_event;
-
 
 void fill_event(ss_plugin_event *evts, int idx, uint8_t *data, uint32_t datalen, uint64_t ts)
 {
