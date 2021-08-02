@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"time"
 	"unsafe"
 
 	"github.com/mstemm/libsinsp-plugin-sdk-go/pkg/sinsp"
@@ -39,7 +40,7 @@ type pluginInstance struct {
 // todo: plugin_get_last_error() needs context as argument to avoid having this global
 var gLastError error
 
-// export plugin_get_required_api_version
+//export plugin_get_required_api_version
 func plugin_get_required_api_version() *C.char {
 	return C.CString(PluginRequiredApiVersion)
 }
@@ -114,7 +115,7 @@ func plugin_get_event_source() *C.char {
 func plugin_get_fields() *C.char {
 	log.Printf("[%s] plugin_get_fields\n", PluginName)
 	flds := []sinsp.FieldEntry{
-		{Type: "string", Name: "dummy.count", Desc: "TBD"},
+		{Type: "uint64", Name: "dummy.count", Desc: "TBD"},
 	}
 
 	b, err := json.Marshal(&flds)
@@ -168,9 +169,9 @@ func plugin_next(pState unsafe.Pointer, oState unsafe.Pointer, retEvt *unsafe.Po
 	// Update some internal state
 	m.m[rand.Intn(100)] = dummy
 
-	evt := sinsp.PluginEvent{
-		Data:              []byte{dummy},
-		Timestamp:         uint64(time.Now().Unix()) * 1000000000
+	evt := &sinsp.PluginEvent{
+		Data:              []byte(dummy),
+		Timestamp:         uint64(time.Now().Unix()) * 1000000000,
 	}
 
 	*retEvt = sinsp.Events([]*sinsp.PluginEvent{evt})
@@ -179,8 +180,8 @@ func plugin_next(pState unsafe.Pointer, oState unsafe.Pointer, retEvt *unsafe.Po
 }
 
 //export plugin_event_to_string
-func plugin_event_to_string(data *C.char, datalen uint32) *C.char {
-	log.Printf("[%s] plugin_event_to_string\n", PluginName)
+func plugin_event_to_string(plgState unsafe.Pointer, data *C.char, datalen uint32) *C.char {
+	log.Printf("[%s] plugin_event_to_string %v\n", PluginName, C.GoStringN(data, C.int(datalen)))
 	// do something dummy with the string
 	s := fmt.Sprintf("evt-to-string(len=%d): %s", datalen, C.GoStringN(data, C.int(datalen)))
 	return C.CString(s)
