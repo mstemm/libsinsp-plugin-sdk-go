@@ -3,15 +3,37 @@ package sinsp
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <pthread.h>
 
 #include <plugin_info.h>
 
-#include <unistd.h>
 
 bool wait_bridge(async_extractor_info *info)
 {
 	return info->cb_wait(info->wait_ctx);
 };
+
+void wait_dispatch(plugin_dispatch *disp)
+{
+        pthread_mutex_lock(&disp->condition_mutex);
+        while(disp->op == OP_INIT) {
+                pthread_cond_wait(&disp->condition_cond, &disp->condition_mutex);
+        }
+        pthread_mutex_unlock(&disp->condition_mutex);
+}
+
+void dispatch_done(plugin_dispatch *disp)
+{
+        pthread_mutex_lock(&disp->condition_mutex);
+        disp->op = OP_INIT;
+        pthread_cond_signal(&disp->condition_cond);
+        pthread_mutex_unlock(&disp->condition_mutex);
+}
+void dispatch_done_atomic(plugin_dispatch *disp)
+{
+   __atomic_sub_fetch(&(disp->op), 1, __ATOMIC_RELAXED);
+}
 */
 import "C"
 import (
@@ -79,4 +101,30 @@ func RegisterAsyncExtractors(
 		}
 	}()
 	return ScapSuccess
+}
+
+type nextFunction func(pState unsafe.Pointer, oState unsafe.Pointer, retEvt *unsafe.Pointer) int32
+
+func RegisterDispatcher(pState unsafe.Pointer, oState unsafe.Pointer, disp unsafe.Pointer, nextFunc nextFunction) {
+	dispStruct := (*C.plugin_dispatch)(disp)
+	go func(){
+		for true {
+			// Wait for a message from the framework
+			C.wait_dispatch(dispStruct)
+			switch(dispStruct.op) {
+			case C.OP_DONE:
+				break
+			case C.OP_NEXT:
+				var nextEvt unsafe.Pointer
+				//			rc := nextFunc(pState, oState, &nextEvt)
+				nextFunc(pState, oState, &nextEvt)
+				//			dispStruct.next_ctx.rc = C.int32_t(rc)
+				dispStruct.next_ctx.rc = 0
+				dispStruct.next_ctx.evt = (*C.ss_plugin_event)(nextEvt)
+			}
+			//C.dispatch_done(dispStruct)
+			//C.dispatch_done_atomic(dispStruct)
+			dispStruct.op = C.OP_INIT
+		}
+	}()
 }

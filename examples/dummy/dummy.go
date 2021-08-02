@@ -187,4 +187,9 @@ func plugin_event_to_string(plgState unsafe.Pointer, data *C.char, datalen uint3
 	return C.CString(s)
 }
 
+//export plugin_register_dispatcher
+func plugin_register_dispatcher(ppState unsafe.Pointer, oState unsafe.Pointer, disp unsafe.Pointer) {
+	log.Printf("[%s] register_dispatcher\n", PluginName)
+	sinsp.RegisterDispatcher(ppState, oState, disp, plugin_next)
+}
 func main() {}
