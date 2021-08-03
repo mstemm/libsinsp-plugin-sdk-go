@@ -1,14 +1,18 @@
 package sinsp
 
-
-import "C"
 import "unsafe"
 
-// PluginExtractStrFunc represents one common signature for the implementation of the `plugin_event_to_string()`
-type PluginExtractStrFunc func(pluginState unsafe.Pointer, evtnum uint64, field *byte, arg *byte, data *byte, datalen uint32) *C.char
-
-// PluginExtractStrFunc represents one common signature for the implementation of the `plugin_event_to_string()`
-type PluginExtractU64Func func(pluginState unsafe.Pointer, evtnum uint64, field *byte, arg *byte, data *byte, datalen uint32, field_present *uint32) uint64
+// PluginExtractStrFunc/PluginExtractU64Func are used when setting up
+// an async extractor via RegisterAsyncExtractors.
+//
+// If https://github.com/golang/go/issues/13467 were fixed, this
+// function signature could directly use the C functions (and their C
+// types) used by the API. Since we can't, we use go native types
+// instead and change their return values to be more golang-friendly.
+//
+// The return value should be (field present as bool, extracted value)
+type PluginExtractStrFunc func(pluginState unsafe.Pointer, evtnum uint64, field string, arg string, data []byte) (bool, string)
+type PluginExtractU64Func func(pluginState unsafe.Pointer, evtnum uint64, field string, arg string, data []byte) (bool, uint64)
 
 type PluginEvent struct {
 	Data           []byte
