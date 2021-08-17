@@ -1,5 +1,9 @@
 package main
 
+// #cgo CFLAGS: -I${SRCDIR}/../../../libs/userspace/libscap
+/*
+#include <plugin_info.h>
+*/
 import "C"
 import (
 	"encoding/json"
@@ -11,7 +15,7 @@ import (
 
 // Plugin consts
 const (
-	PluginApiVersion  string = "1.0.0"
+	PluginRequiredApiVersion = "1.0.0"
 	PluginVersion     string = "0.0.1"
 	PluginName               = "async"
 	PluginDescription        = "async extractor example"
@@ -29,9 +33,9 @@ type pluginCtx struct {
 // todo: plugin_get_last_error() needs context as argument to avoid having this global
 var gLastError error
 
-// export plugin_get_required_api_version
+//export plugin_get_required_api_version
 func plugin_get_required_api_version() *C.char {
-	return C.CString(PluginApiVersion)
+	return C.CString(PluginRequiredApiVersion)
 }
 
 //export plugin_get_type
@@ -45,12 +49,13 @@ func plugin_init(config *C.char, rc *int32) unsafe.Pointer {
 	log.Printf("[%s] plugin_init\n", PluginName)
 	log.Printf("config string:\n%s\n", C.GoString(config))
 
-	// This plugin does not need to set up any state, so do
-	// nothing and return a nil pointer.
+	// This plugin does not need to set up any state, so just
+	// return an empty state object.
+	pState := sinsp.NewStateContainer()
 
 	*rc = sinsp.ScapSuccess
 
-	return nil
+	return pState
 }
 
 //export plugin_destroy
@@ -107,7 +112,8 @@ func plugin_get_extract_event_sources() *C.char {
 func plugin_get_fields() *C.char {
 	log.Printf("[%s] plugin_get_fields\n", PluginName)
 	flds := []sinsp.FieldEntry{
-		{Type: "string", Name: "async.field", Desc: "TBD"},
+		{Type: "string", Name: "async.strfield", Desc: "TBD"},
+		{Type: "uint64", Name: "async.ufield", Desc: "TBD"},
 	}
 
 	b, err := json.Marshal(&flds)
@@ -119,20 +125,24 @@ func plugin_get_fields() *C.char {
 	return C.CString(string(b))
 }
 
-//export plugin_extract_str
-func plugin_extract_str(pluginState unsafe.Pointer, evtnum uint64, field *byte, arg *byte, data *byte, datalen uint32) *C.char {
-	//log.Printf("[%s] plugin_extract_str\n", PluginName)
-	return C.CString("ciao")
+func extract_str(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, string) {
+	///log.Printf("[%s] plugin_extract_str\n", PluginName)
+	return true, "ciao"
 }
 
-//export plugin_extract_u64
-func plugin_extract_u64(plgState unsafe.Pointer, evtnum uint64, field *byte, arg *byte, data *byte, datalen uint32, fieldPresent *uint32) uint64 {
-	return 11
+func extract_u64(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, uint64) {
+	return true, 11
+}
+
+//export plugin_extract_fields
+func plugin_extract_fields(plgState unsafe.Pointer, evt *C.struct_ss_plugin_event, numFields uint32, fields *C.struct_ss_plugin_extract_field) int32 {
+	//log.Printf("[%s] plugin_extract_fields\n", PluginName)
+	return sinsp.WrapExtractFuncs(plgState, unsafe.Pointer(evt), numFields, unsafe.Pointer(fields), extract_str, extract_u64)
 }
 
 //export plugin_register_async_extractor
 func plugin_register_async_extractor(pluginState unsafe.Pointer, asyncExtractorInfo unsafe.Pointer) int32 {
-	return sinsp.RegisterAsyncExtractors(pluginState, asyncExtractorInfo, plugin_extract_str, plugin_extract_u64)
+	return sinsp.RegisterAsyncExtractors(pluginState, asyncExtractorInfo, extract_str, extract_u64)
 }
 
 func main() {}
