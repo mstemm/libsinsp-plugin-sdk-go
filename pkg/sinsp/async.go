@@ -4,6 +4,7 @@ package sinsp
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <plugin_info.h>
 
@@ -19,65 +20,68 @@ import (
 	"unsafe"
 )
 
-// These helpers avoid duplicating the same conversion code in plugins
+// These helpers avoid duplicating the same conversion/iteration code in plugins
 // that want to use the async extractor functions. It circuments the
 // problems in https://github.com/golang/go/issues/13466.
 //
 // It also uses unsafe.Pointer so be careful with its use!
 
-func WrapExtractStr(plgState unsafe.Pointer, evtnum uint64, field unsafe.Pointer, arg unsafe.Pointer, data unsafe.Pointer, datalen uint32, strExtractorFunc PluginExtractStrFunc) unsafe.Pointer {
-	fieldStr := C.GoString((*C.char)(field))
-	argStr := C.GoString((*C.char)(arg))
-	dataBuf := C.GoBytes(data, C.int(datalen))
+func WrapExtractFuncs(plgState unsafe.Pointer, evt unsafe.Pointer, numFields uint32, fields unsafe.Pointer,
+	strExtractorFunc PluginExtractStrFunc,
+	u64ExtractorFunc PluginExtractU64Func) int32 {
 
-	present, extractStr := strExtractorFunc(plgState, evtnum, fieldStr, argStr, dataBuf)
+	event := (*C.struct_ss_plugin_event)(evt)
+	dataBuf := C.GoBytes(unsafe.Pointer(event.data), C.int(event.datalen))
 
-	if (!present) {
-		return nil
+	// https://github.com/golang/go/wiki/cgo#turning-c-arrays-into-go-slices
+	flds := (*[1 << 28]C.struct_ss_plugin_extract_field)(unsafe.Pointer(fields))[:numFields:numFields]
+
+	var i uint32
+	for i = 0; i < numFields; i++ {
+		fieldStr := C.GoString((*C.char)(flds[i].field))
+		argStr := C.GoString((*C.char)(flds[i].arg))
+
+		switch uint32(flds[i].ftype) {
+		case ParamTypeCharBuf:
+			present, str := strExtractorFunc(plgState, uint64(event.evtnum), dataBuf, uint64(event.ts), fieldStr, argStr)
+			if present {
+				flds[i].field_present = C.bool(true)
+				flds[i].res_str = C.CString(str)
+			} else {
+				flds[i].field_present = C.bool(false)
+				flds[i].res_str = nil
+			}
+		case ParamTypeUint64:
+			present, u64 := u64ExtractorFunc(plgState, uint64(event.evtnum), dataBuf, uint64(event.ts), fieldStr, argStr)
+			if present {
+				flds[i].field_present = C.bool(true)
+				flds[i].res_u64 = C.uint64_t(u64)
+			} else {
+				flds[i].field_present = C.bool(false)
+			}
+		}
 	}
 
-	return unsafe.Pointer(C.CString(extractStr))
+	return ScapSuccess
 }
 
-func WrapExtractU64(plgState unsafe.Pointer, evtnum uint64, field unsafe.Pointer, arg unsafe.Pointer, data unsafe.Pointer, datalen uint32, fieldPresent *uint32, u64ExtractorFunc PluginExtractU64Func) uint64 {
-	fieldStr := C.GoString((*C.char)(field))
-	argStr := C.GoString((*C.char)(arg))
-	dataBuf := C.GoBytes(data, C.int(datalen))
-
-	present, extractU64 := u64ExtractorFunc(plgState, evtnum, fieldStr, argStr, dataBuf)
-
-	if (!present) {
-		*fieldPresent = 0
-		return 0
-	}
-
-	*fieldPresent = 1
-	return extractU64
-}
-
-// RegisterAsyncExtractors is a helper function to be used within plugin_register_async_extractor.
+// RegisterAsyncExtractors is a helper function to be used within plugin_register_async_extractor/plugin_extract_fields.
 //
 // Intended usage as in the following example:
 //
-//     // A function called by plugin_extract_str after conversion from C types to go types
-//     func extract_str(pluginState unsafe.Pointer, evtnum uint64, field string, arg string, data []byte) (bool, string) {
+//     // A function to extract a single string field from an event
+//     func extract_str(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, string) {
 //     	...
 //     }
 //
-//     // A function called by plugin_extract_u64 after conversion from C types to go types
-//     func extract_u64(pluginState unsafe.Pointer, evtnum uint64, field string, arg string, data []byte) (bool, uint64) {
+//     // A function to extract a single uint64 field from an event
+//     func extract_u64(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, uint64) {
 //      ...
 //     }
 //
-//     //export plugin_extract_str
-//     func plugin_extract_str(plgState unsafe.Pointer, evtnum uint64, field *C.char, arg *C.char, data *C.uint8_t, datalen uint32) *C.char {
-//      // A plugin can also do their own conversion, but this wrapper handles the conversion automatically.
-//	return (*C.char)(sinsp.WrapExtractStr(plgState, evtnum, unsafe.Pointer(field), unsafe.Pointer(arg), unsafe.Pointer(data), datalen, extract_str))
-//     }
-//
-//     //export plugin_extract_u64
-//     func plugin_extract_u64(plgState unsafe.Pointer, evtnum uint64, field *C.char, arg *C.char, data *C.uint8_t, datalen uint32, fieldPresent *uint32) uint64 {
-//	return sinsp.WrapExtractU64(plgState, evtnum, unsafe.Pointer(field), unsafe.Pointer(arg), unsafe.Pointer(data), datalen, fieldPresent, extract_u64)
+//     //export plugin_extract_fields
+//     func plugin_extract_fields(plgState unsafe.Pointer, evt *C.struct_ss_plugin_event, field *C.struct_ss_plugin_extract_field) uint32 {
+//       return sinsp.WrapExtractFuncs(plgState, unsafe.Pointer(evt), unsafe.Pointer(field), extract_str, extract_u64)
 //     }
 //
 //     //export plugin_register_async_extractor
@@ -102,35 +106,36 @@ func RegisterAsyncExtractors(
 		for C.wait_bridge(info) {
 			info.rc = C.int32_t(ScapSuccess)
 
-			fieldStr := C.GoString((*C.char)(unsafe.Pointer(info.field)))
-			argStr := C.GoString((*C.char)(unsafe.Pointer(info.arg)))
-			dataBuf := C.GoBytes(unsafe.Pointer(info.data), C.int(info.datalen))
+			dataBuf := C.GoBytes(unsafe.Pointer(info.evt.data), C.int(info.evt.datalen))
 
-			switch uint32(info.ftype) {
+			fieldStr := C.GoString((*C.char)(info.field.field))
+			argStr := C.GoString((*C.char)(info.field.arg))
+
+			switch uint32(info.field.ftype) {
 			case ParamTypeCharBuf:
 				if strExtractorFunc != nil {
-					present, extractStr := strExtractorFunc(pluginState, uint64(info.evtnum), fieldStr, argStr, dataBuf)
+					present, str := strExtractorFunc(pluginState, uint64(info.evt.evtnum), dataBuf, uint64(info.evt.ts), fieldStr, argStr)
 
-					if (!present){
-						info.field_present = C.uint32_t(0)
-						info.res_str = nil
+					if present {
+						info.field.field_present = C.bool(true)
+						info.field.res_str = C.CString(str)
 					} else {
-						info.field_present = C.uint32_t(1)
-						info.res_str = C.CString(extractStr)
+						info.field.field_present = C.bool(false)
+						info.field.res_str = nil
 					}
 				} else {
 					info.rc = C.int32_t(ScapNotSupported)
 				}
 			case ParamTypeUint64:
 				if u64ExtractorFunc != nil {
-					present, extractU64 := u64ExtractorFunc(pluginState, uint64(info.evtnum), fieldStr, argStr, dataBuf)
+					present, u64 := u64ExtractorFunc(pluginState, uint64(info.evt.evtnum), dataBuf, uint64(info.evt.ts), fieldStr, argStr)
 
 					if (!present){
-						info.field_present = 0
+						info.field.field_present = C.bool(true)
 					} else {
-						info.field_present = 1
+						info.field.field_present = C.bool(false)
+						info.field.res_u64 = C.uint64_t(u64)
 					}
-					info.res_u64 = C.uint64_t(extractU64)
 				} else {
 					info.rc = C.int32_t(ScapNotSupported)
 				}

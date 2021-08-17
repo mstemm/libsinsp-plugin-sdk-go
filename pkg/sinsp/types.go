@@ -11,8 +11,8 @@ import "unsafe"
 // instead and change their return values to be more golang-friendly.
 //
 // The return value should be (field present as bool, extracted value)
-type PluginExtractStrFunc func(pluginState unsafe.Pointer, evtnum uint64, field string, arg string, data []byte) (bool, string)
-type PluginExtractU64Func func(pluginState unsafe.Pointer, evtnum uint64, field string, arg string, data []byte) (bool, uint64)
+type PluginExtractStrFunc func(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, string)
+type PluginExtractU64Func func(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, uint64)
 
 type PluginEvent struct {
 	Data           []byte

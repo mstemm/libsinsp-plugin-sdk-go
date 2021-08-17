@@ -74,7 +74,7 @@ func Events(evts []*PluginEvent) unsafe.Pointer {
 			(C.int)(i),
 			(*C.uchar)(C.CBytes(evt.Data)),
 			(C.uint)(len(evt.Data)),
-			(C.ulong)(evt.Timestamp))
+			(C.uint64_t)(evt.Timestamp))
 	}
 
 	return (unsafe.Pointer)(ret)
