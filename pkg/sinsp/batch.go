@@ -14,7 +14,8 @@ func NextBatch(plgState unsafe.Pointer, openState unsafe.Pointer, nextf NextFunc
 	evts := make([]*PluginEvent, 0)
 
 	for len(evts) < MaxNextBatchEvents {
-		evt, res := nextf(plgState, openState)
+		var evt *PluginEvent
+		evt, res = nextf(plgState, openState)
 		if res == ScapSuccess {
 			evts = append(evts, evt)
 		} else {
