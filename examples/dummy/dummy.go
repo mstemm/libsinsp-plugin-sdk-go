@@ -23,7 +23,7 @@ const (
 	PluginID                 uint32 = 3
 	PluginName                      = "dummy"
 	PluginDescription               = "Reference plugin for educational purposes"
-	PluginContact                   = "github.com/mstemm/libsinsp-plugin-sdk-go"
+	PluginContact                   = "github.com/falcosecurity/plugins"
 	PluginVersion                   = "1.0.0"
 	PluginEventSource               = "dummy"
 )
@@ -35,7 +35,7 @@ type pluginState struct {
 	// A copy of the config provided to plugin_init()
 	config string
 
-	// When a function results in an erorr, this is set and can be
+	// When a function results in an error, this is set and can be
 	// retrieved in plugin_get_last_error().
 	lastError error
 
@@ -67,6 +67,7 @@ type instanceState struct {
 
 //export plugin_get_required_api_version
 func plugin_get_required_api_version() *C.char {
+	log.Printf("[%s] plugin_get_required_api_version\n", PluginName)
 	return C.CString(PluginRequiredApiVersion)
 }
 
@@ -74,62 +75,6 @@ func plugin_get_required_api_version() *C.char {
 func plugin_get_type() uint32 {
 	log.Printf("[%s] plugin_get_type\n", PluginName)
 	return sinsp.TypeSourcePlugin
-}
-
-//export plugin_init
-func plugin_init(config *C.char, rc *int32) unsafe.Pointer {
-	cfg := C.GoString(config)
-	log.Printf("[%s] plugin_init config=%s\n", PluginName, cfg)
-
-	// The format of cfg is a json object with a single param
-	// "jitter", e.g. {"jitter": 10}
-	var obj map[string]uint64
-	err := json.Unmarshal([]byte(cfg), &obj)
-	if err != nil {
-		return nil
-	}
-	if _, ok := obj["jitter"]; !ok {
-		return nil
-	}
-
-	ps := &pluginState{
-		config:    cfg,
-		lastError: nil,
-		jitter:    obj["jitter"],
-		rand:      rand.New(rand.NewSource(time.Now().UnixNano())),
-	}
-
-	// In order to avoid breaking the Cgo pointer passing rules,
-	// we wrap the plugin state in a handle using
-	// sinsp.NewStateContainer()
-	handle := sinsp.NewStateContainer()
-	sinsp.SetContext(handle, unsafe.Pointer(ps))
-
-	*rc = sinsp.ScapSuccess
-
-	return handle
-}
-
-//export plugin_destroy
-func plugin_destroy(pState unsafe.Pointer) {
-	log.Printf("[%s] plugin_destroy\n", PluginName)
-
-	// This frees the pluginState struct inside this handle
-	sinsp.Free(pState)
-}
-
-//export plugin_get_last_error
-func plugin_get_last_error(pState unsafe.Pointer) *C.char {
-	log.Printf("[%s] plugin_get_last_error\n", PluginName)
-
-	ps := (*pluginState)(sinsp.Context(pState))
-
-	if ps.lastError != nil {
-		str := C.CString(ps.lastError.Error())
-		ps.lastError = nil
-		return str
-	}
-	return nil
 }
 
 //export plugin_get_id
@@ -186,6 +131,64 @@ func plugin_get_fields() *C.char {
 	return C.CString(string(b))
 }
 
+//export plugin_get_last_error
+func plugin_get_last_error(pState unsafe.Pointer) *C.char {
+	log.Printf("[%s] plugin_get_last_error\n", PluginName)
+
+	ps := (*pluginState)(sinsp.Context(pState))
+
+	if ps.lastError != nil {
+		str := C.CString(ps.lastError.Error())
+		ps.lastError = nil
+		return str
+	}
+	return nil
+}
+
+//export plugin_init
+func plugin_init(config *C.char, rc *int32) unsafe.Pointer {
+	cfg := C.GoString(config)
+	log.Printf("[%s] plugin_init config=%s\n", PluginName, cfg)
+
+	// The format of cfg is a json object with a single param
+	// "jitter", e.g. {"jitter": 10}
+	var obj map[string]uint64
+	err := json.Unmarshal([]byte(cfg), &obj)
+	if err != nil {
+		*rc = sinsp.ScapFailure
+		return nil
+	}
+	if _, ok := obj["jitter"]; !ok {
+		*rc = sinsp.ScapFailure
+		return nil
+	}
+
+	ps := &pluginState{
+		config:    cfg,
+		lastError: nil,
+		jitter:    obj["jitter"],
+		rand:      rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+
+	// In order to avoid breaking the Cgo pointer passing rules,
+	// we wrap the plugin state in a handle using
+	// sinsp.NewStateContainer()
+	handle := sinsp.NewStateContainer()
+	sinsp.SetContext(handle, unsafe.Pointer(ps))
+
+	*rc = sinsp.ScapSuccess
+
+	return handle
+}
+
+//export plugin_destroy
+func plugin_destroy(pState unsafe.Pointer) {
+	log.Printf("[%s] plugin_destroy\n", PluginName)
+
+	// This frees the pluginState struct inside this handle
+	sinsp.Free(pState)
+}
+
 //export plugin_open
 func plugin_open(pState unsafe.Pointer, params *C.char, rc *int32) unsafe.Pointer {
 	prms := C.GoString(params)
@@ -202,15 +205,18 @@ func plugin_open(pState unsafe.Pointer, params *C.char, rc *int32) unsafe.Pointe
 	err := json.Unmarshal([]byte(prms), &obj)
 	if err != nil {
 		ps.lastError = fmt.Errorf("Params %s could not be parsed: %v", prms, err)
+		*rc = sinsp.ScapFailure
 		return nil
 	}
 	if _, ok := obj["start"]; !ok {
 		ps.lastError = fmt.Errorf("Params %s did not contain start property", prms)
+		*rc = sinsp.ScapFailure
 		return nil
 	}
 
 	if _, ok := obj["maxEvents"]; !ok {
 		ps.lastError = fmt.Errorf("Params %s did not contain maxEvents property", prms)
+		*rc = sinsp.ScapFailure
 		return nil
 	}
 
@@ -275,6 +281,23 @@ func plugin_next(pState unsafe.Pointer, iState unsafe.Pointer, retEvt **C.ss_plu
 	if res == sinsp.ScapSuccess {
 		*retEvt = (*C.ss_plugin_event)(sinsp.Events([]*sinsp.PluginEvent{evt}))
 	}
+
+	return res
+}
+
+// This wraps the simpler Next() function above and takes care of the
+// details of assembling multiple events.
+
+//export plugin_next_batch
+func plugin_next_batch(pState unsafe.Pointer, iState unsafe.Pointer, nevts *uint32, retEvts **C.ss_plugin_event) int32 {
+	evts, res := sinsp.NextBatch(pState, iState, Next)
+
+	if res == sinsp.ScapSuccess {
+		*retEvts = (*C.ss_plugin_event)(sinsp.Events(evts))
+		*nevts = (uint32)(len(evts))
+	}
+
+	log.Printf("[%s] plugin_next_batch\n", PluginName)
 
 	return res
 }
@@ -361,23 +384,6 @@ func plugin_extract_fields(pState unsafe.Pointer, evt *C.struct_ss_plugin_event,
 //export plugin_register_async_extractor
 func plugin_register_async_extractor(pluginState unsafe.Pointer, asyncExtractorInfo unsafe.Pointer) int32 {
 	return sinsp.RegisterAsyncExtractors(pluginState, asyncExtractorInfo, extract_str, extract_u64)
-}
-
-// This wraps the simpler Next() function above and takes care of the
-// details of assembling multiple events.
-
-//export plugin_next_batch
-func plugin_next_batch(pState unsafe.Pointer, iState unsafe.Pointer, nevts *uint32, retEvts **C.ss_plugin_event) int32 {
-	evts, res := sinsp.NextBatch(pState, iState, Next)
-
-	if res == sinsp.ScapSuccess {
-		*retEvts = (*C.ss_plugin_event)(sinsp.Events(evts))
-		*nevts = (uint32)(len(evts))
-	}
-
-	log.Printf("[%s] plugin_next_batch\n", PluginName)
-
-	return res
 }
 
 func main() {}
