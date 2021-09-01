@@ -23,12 +23,16 @@ import (
 )
 
 // NewStateContainer returns an opaque pointer to a memory container that
-// may be safely passed back and forth to sinsp.
+// may be safely passed back and forth to the plugin framework.
 //
 // A state container can reference a Go pointer (suitable for a Go context).
 // Both are persisted in memory until manually freed.
 // A state container must be manually freed by using Free().
 // It can be either used as the state of a source plugin or an open state of the source plugin.
+//
+// When go 1.17 is more widespread, this implementation will change to
+// use cgo.Handle (https://pkg.go.dev/runtime/cgo@go1.17#Handle)
+// instead.
 func NewStateContainer() unsafe.Pointer {
 	pCtx := (*C.state)(C.malloc(C.sizeof_state))
 	pCtx.goMem = nil
@@ -59,6 +63,13 @@ func Context(p unsafe.Pointer) unsafe.Pointer {
 	return (*C.state)(p).goMem
 }
 
+// Free disposes of any C and Go memory assigned to p and finally free P,
+// assuming p is a state container created with NewStateContainer().
+func Free(p unsafe.Pointer) {
+	SetContext(p, nil)
+	C.free(p)
+}
+
 // Convert the provided slice of PluginEvents into a C array of
 // ss_plugin_event structs, suitable for returning in
 // plugin_next/plugin_next_batch.
@@ -78,11 +89,4 @@ func Events(evts []*PluginEvent) unsafe.Pointer {
 	}
 
 	return (unsafe.Pointer)(ret)
-}
-
-// Free disposes of any C and Go memory assigned to p and finally free P,
-// assuming p is a state container created with NewStateContainer().
-func Free(p unsafe.Pointer) {
-	SetContext(p, nil)
-	C.free(p)
 }
