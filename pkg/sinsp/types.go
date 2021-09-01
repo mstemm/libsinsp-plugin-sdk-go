@@ -15,6 +15,7 @@ type PluginExtractStrFunc func(pluginState unsafe.Pointer, evtnum uint64, data [
 type PluginExtractU64Func func(pluginState unsafe.Pointer, evtnum uint64, data []byte, ts uint64, field string, arg string) (bool, uint64)
 
 type PluginEvent struct {
+	Evtnum         uint64
 	Data           []byte
 	Timestamp      uint64
 }
