@@ -18,6 +18,10 @@ func NextBatch(plgState unsafe.Pointer, openState unsafe.Pointer, nextf NextFunc
 		evt, res = nextf(plgState, openState)
 		if res == ScapSuccess {
 			evts = append(evts, evt)
+		} else if res == ScapEOF {
+			// Return success but stop
+			res = ScapSuccess
+			break
 		} else {
 			break
 		}
